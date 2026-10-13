@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Image as ImageIcon, Layers, SlidersHorizontal, Download, RotateCcw, MonitorSmartphone, Smartphone, PanelTop, CheckCircle2, Info, FileImage, Scissors, ShieldCheck, Palette, Github, Move, Sun, Settings2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Layers, SlidersHorizontal, Download, RotateCcw, MonitorSmartphone, Smartphone, PanelTop, CheckCircle2, Info, FileImage, Scissors, ShieldCheck, Palette, Github, Move, Sun, Settings2, Sparkles, WandSparkles, ScanSearch, Eraser, UserRound, LockKeyhole } from 'lucide-react';
 import { readPsd } from 'ag-psd';
 import { SPEC, drawThumbnail, loadBitmap, cropImage, downloadCanvas } from './engine.js';
 
@@ -98,10 +98,51 @@ function SourcePreview({art,cropMode,selection,sourceBox,onPointer,applyCrop,can
     <small>{cropMode?'Drag a rectangle over the logo.':'Original artwork is preserved unless edited.'}</small>
   </div>;
 }
+function AIPanel({busy,analysis,aiAction,aiError,hasImage}) {
+ return <>
+   <Section title="Gemini · Asset detection" icon={ScanSearch}>
+     <p className="aiDescription">Gemini открива координатите на логото и основния персонаж в оригиналния файл.</p>
+     <button className="aiPrimary" disabled={busy||!hasImage} onClick={()=>aiAction('analyze')}><ScanSearch size={16}/> {busy==='analyze'?'Analyzing…':'1 · Analyze thumbnail'}</button>
+     {analysis && <div className="aiResults">
+       <div><strong>Game logo</strong><span>{analysis.logo?`${Math.round(analysis.logo.confidence*100||0)}% · detected`:'Not detected'}</span></div>
+       <div><strong>Character</strong><span>{analysis.character?`${Math.round(analysis.character.confidence*100||0)}% · detected`:'Not detected'}</span></div>
+       {analysis.notes && <small>{analysis.notes}</small>}
+     </div>}
+     <button className="plainButton" disabled={!analysis?.logo||!!busy} onClick={()=>aiAction('crop-detected')}><Scissors size={16}/> Move detected logo to Logo Area (crop)</button>
+     <p className="smallNote">Crop moves original pixels, including any background inside the selection. For a clean transparent logo, use the next AI action.</p>
+   </Section>
+   <Section title="Nano Banana · Layer extraction" icon={WandSparkles}>
+     <button className="aiAction" disabled={!!busy||!hasImage} onClick={()=>aiAction('extract-logo')}><Layers size={16}/> {busy==='extract-logo'?'Generating logo…':'2 · Isolate game logo (AI)'}</button>
+     <button className="aiAction" disabled={!!busy||!hasImage} onClick={()=>aiAction('remove-logo')}><Eraser size={16}/> {busy==='remove-logo'?'Reconstructing…':'3 · Remove baked-in logo from artwork'}</button>
+     <button className="aiAction" disabled={!!busy||!hasImage} onClick={()=>aiAction('isolate-character')}><UserRound size={16}/> {busy==='isolate-character'?'Extracting…':'Extract character as separate asset'}</button>
+     <p className="smallNote">AI images are approximations; review original lettering, face and transparency. The logo will always be placed after the blue gradient, centered within y=308–428 px.</p>
+   </Section>
+   <div className="logoRule"><LockKeyhole size={16}/> Gemini API key is stored only in the Vercel server environment.</div>
+   {aiError&&<div className="errorBox">{aiError}</div>}
+ </>;
+}
+async function canvasDataUrl(bitmap) {
+ const c=document.createElement('canvas');
+ c.width=bitmap.width||bitmap.naturalWidth;c.height=bitmap.height||bitmap.naturalHeight;
+ // Scale so base64 API requests stay below serverless size limits.
+ const factor=Math.min(1,1400/Math.max(c.width,c.height));
+ if(factor<1){c.width=Math.round(c.width*factor);c.height=Math.round(c.height*factor)}
+ c.getContext('2d').drawImage(bitmap,0,0,c.width,c.height);
+ return c.toDataURL('image/jpeg',.88);
+}
+async function imageFromDataUrl(url) {
+ const blob=await (await fetch(url)).blob();return createImageBitmap(blob);
+}
+function normalizedCrop(bitmap,box){
+ const [y0,x0,y1,x1]=box;
+ const w=bitmap.width||bitmap.naturalWidth,h=bitmap.height||bitmap.naturalHeight;
+ return cropImage(bitmap,{x:x0*w/1000,y:y0*h/1000,w:Math.max(1,(x1-x0)*w/1000),h:Math.max(1,(y1-y0)*h/1000)});
+}
 export default function App() {
   const [params,setParams]=useState(DEFAULT);
   const [art,setArt]=useState(null),[logo,setLogo]=useState(null),[sourceName,setSourceName]=useState('Palms Royale Grand Roulette');
   const [tab,setTab]=useState('artwork'),[format,setFormat]=useState('webp'),[horizontal,setHorizontal]=useState(false),[status,setStatus]=useState('Ready');
+  const [analysis,setAnalysis]=useState(null),[aiBusy,setAiBusy]=useState(''),[aiError,setAiError]=useState(''),[character,setCharacter]=useState(null),[originalArt,setOriginalArt]=useState(null);
   const [layers,setLayers]=useState([]),[error,setError]=useState(''),[cropMode,setCropMode]=useState(false),[selection,setSelection]=useState(null);
   const preview=useRef(null),sourceInput=useRef(null),logoInput=useRef(null),sourceBox=useRef(null),cropStart=useRef(null);
   const update=(key,value)=>setParams(old=>({...old,[key]:value}));
@@ -116,13 +157,41 @@ export default function App() {
         const found=collectLayers(psd.children);setLayers(found);
         const image=rasterLayerCanvas(psd)||found[0]?.bitmap;
         if(!image)throw new Error('No raster artwork found. Export a PNG or choose another PSD.');
-        if(which==='art'){setArt(image);setSourceName(file.name.replace(/\.psd$/i,''));} else setLogo(image);
+        if(which==='art'){setArt(image);setOriginalArt(image);setAnalysis(null);setCharacter(null);setSourceName(file.name.replace(/\.psd$/i,''));} else setLogo(image);
       } else {
         const bmp=await loadBitmap(file);
-        if(which==='art'){setArt(bmp);setSourceName(file.name.replace(/\.[^.]+$/,''));setLayers([]);}else setLogo(bmp);
+        if(which==='art'){setArt(bmp);setOriginalArt(bmp);setAnalysis(null);setCharacter(null);setSourceName(file.name.replace(/\.[^.]+$/,''));setLayers([]);}else setLogo(bmp);
       }
       setStatus('Ready');
     }catch(e){setError('Could not open file: '+e.message);setStatus('Error');}
+  }
+  async function aiAction(mode){
+    const source=originalArt||art;
+    if(!source)return setAiError('Upload a thumbnail first.');
+    setAiError('');
+    if(mode==='crop-detected'){
+      if(!analysis?.logo?.box)return setAiError('Run Gemini analysis first.');
+      setLogo(normalizedCrop(source,analysis.logo.box));setTab('logo');
+      setStatus('Original logo cropped into reserved area (background may remain)');return;
+    }
+    setAiBusy(mode);setStatus('AI: '+mode+'…');
+    try {
+      const payload={mode,image:await canvasDataUrl(source),box:analysis?.logo?.box};
+      const response=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'AI operation failed');
+      if(mode==='analyze'){setAnalysis(data);setStatus('Detected assets · review results');}
+      else {
+        const bitmap=await imageFromDataUrl(data.image);
+        if(mode==='extract-logo'){setLogo(bitmap);setTab('logo');setStatus('Logo image generated · verify original typography and transparency');}
+        if(mode==='remove-logo'){setArt(bitmap);setStatus('Background reconstructed · verify character details');}
+        if(mode==='isolate-character'){setCharacter(bitmap);setStatus('Character extracted as an asset · use download below');}
+      }
+    }catch(e){setAiError(e.message);setStatus('AI error');}
+    finally{setAiBusy('')}
+  }
+  async function downloadCharacter(){
+    if(!character)return;let c=document.createElement('canvas');c.width=character.width;c.height=character.height;c.getContext('2d').drawImage(character,0,0);
+    await downloadCanvas(c,'png',sourceName+'-character-asset');
   }
   async function exportFile() {
     try {
@@ -150,15 +219,16 @@ export default function App() {
   return <div className="appShell">
     <header className="topbar">
       <div className="brand"><span className="brandmark">P<span>✦</span></span><div><strong>Thumbnail Studio</strong><small>by PalmsBet · Creative tools</small></div></div>
-      <div className="topRight"><span className="appVersion">V 1.1</span><span className="ready"><span className="dot"/>{status}</span><a className="github" href="https://github.com/new" target="_blank" rel="noreferrer" title="Create GitHub repository"><Github size={17}/></a></div>
+      <div className="topRight"><span className="appVersion">V 2.0 AI</span><span className="ready"><span className="dot"/>{status}</span><a className="github" href="https://github.com/new" target="_blank" rel="noreferrer" title="Create GitHub repository"><Github size={17}/></a></div>
     </header>
     <main className="workspace">
       <aside className="sidebar">
         <div className="sidebarTitle"><div><p className="eyebrow">WORKSPACE</p><h1>Design controls</h1></div><button className="iconButton" onClick={()=>setParams(DEFAULT)} title="Reset settings"><RotateCcw size={17}/></button></div>
         <div className="tabs" role="tablist">
-          { [['artwork','Artwork',ImageIcon],['logo','Logo',Layers],['finish','Finish',SlidersHorizontal]].map(([key,label,Icon])=><button key={key} className={tab===key?'active':''} onClick={()=>setTab(key)}><Icon size={16}/>{label}</button>) }
+          { [['artwork','Artwork',ImageIcon],['ai','AI Studio',Sparkles],['logo','Logo',Layers],['finish','Finish',SlidersHorizontal]].map(([key,label,Icon])=><button key={key} className={tab===key?'active':''} onClick={()=>setTab(key)}><Icon size={16}/>{label}</button>) }
         </div>
         {tab==='artwork' && <ArtworkPanel params={params} update={update} openFile={openFile} sourceInput={sourceInput} sourceName={sourceName} setSourceName={setSourceName} layers={layers} setArt={setArt}/>}
+        {tab==='ai' && <AIPanel busy={aiBusy} analysis={analysis} aiAction={aiAction} aiError={aiError} hasImage={!!art}/>}
         {tab==='logo' && <LogoPanel params={params} update={update} openFile={openFile} logoInput={logoInput} logo={logo} setLogo={setLogo} layers={layers} setCropMode={setCropMode} setSelection={setSelection}/>}
         {tab==='finish' && <FinishPanel params={params} update={update}/>}
       </aside>
@@ -178,6 +248,7 @@ export default function App() {
         </div>
         <button className="exportButton" onClick={exportFile}><Download size={19}/> Export {format.toUpperCase()}</button>
         <div className="exportHint">Downloads directly to your device<br/>No server · No upload required</div>
+        {character&&<div className="bottomCard"><h3>Extracted character asset</h3><button className="aiAction" onClick={downloadCharacter}><Download size={16}/> Download character PNG</button></div>}
         <SourcePreview art={art} cropMode={cropMode} selection={selection} sourceBox={sourceBox} onPointer={onPointer} applyCrop={applyCrop} cancelCrop={()=>{setCropMode(false);setSelection(null);}}/>
       </aside>
     </main>

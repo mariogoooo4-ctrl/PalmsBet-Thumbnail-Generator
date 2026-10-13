@@ -1,49 +1,38 @@
-# PalmsBet Thumbnail Studio · React
+# PalmsBet Thumbnail Studio v2 — Gemini + Nano Banana
 
-A browser-based thumbnail composition tool built with React, Vite, `ag-psd`, HTML Canvas and a clean Apple-inspired interface.
+React + Vite editor with an Apple-inspired UI and Vercel AI backend. All code is included. Fixed canvas 328×458: 49 px provider, 259 artwork, 120 logo, 30 ribbon. Blue base `#0025A3`.
 
-## Quick start
+## Start locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the local address printed by Vite. Production build: `npm run build` (output in `dist/`).
+The visual editor works offline. **Gemini / Nano Banana actions need the Vercel function**; for local AI API development use `npx vercel dev` with configured environment variables.
 
-## GitHub Pages deployment
+## Deploy to Vercel
 
-1. Create a **new GitHub repository** and upload **the contents of this folder** (not the ZIP file itself). Include the `.github/workflows/deploy.yml` directory.
-2. Ensure the default branch is `main` and push all files.
-3. Under **Settings → Pages → Build and deployment**, select **GitHub Actions** as the source.
-4. Wait for the `Deploy to GitHub Pages` workflow to complete. Your app will be available at the repository's Pages URL.
+1. Upload this project folder contents into a GitHub repository.
+2. In Vercel import repository, select Vite preset, and root directory that contains `package.json` (repo root if you uploaded contents directly).
+3. Settings → Environment Variables → create **GEMINI_API_KEY** from Google AI Studio. Do not use `VITE_` prefix; never commit secrets.
+4. Optional `GEMINI_ANALYSIS_MODEL` default `gemini-2.5-flash` and `GEMINI_IMAGE_MODEL` default `gemini-2.5-flash-image`. For Nano Banana 2.1, set image model to `gemini-nano-banana-2.1` if your API key has access. Redeploy after settings change.
+5. Vercel settings: build command `npm run build`; output `dist`; API runs as serverless function `api/ai.js`.
 
-Relative asset paths and `base: './'` make the build work under a GitHub Pages subdirectory.
+## Workflow
 
-## Features
+1. Artwork → Upload JPG, PNG, WebP or PSD.
+2. AI Studio → **Analyze thumbnail**: Gemini identifies title/logo and character bounding boxes, normalized 0–1000.
+3. **Move detected logo** is a deterministic crop of ORIGINAL pixels (background may remain).
+4. **Isolate game logo (AI)** asks Nano Banana for a transparent logo image. Check visually for text distortion or opacity; a raster image model cannot guarantee exact transparent original vectors.
+5. **Remove baked-in logo** reconstructs missing background; inspect AI changes and any modified characters.
+6. **Extract character** generates downloadable character image, which might need transparency cleanup.
+7. The final Canvas renderer places **blue gradient BEFORE the logo**, locks logo inside y=308–428 and horizontally centers it. Export PNG/WebP.
 
-- Upload JPG / PNG / WebP files and supported PSD files; choose a PSD raster layer for artwork/logo.
-- Upload a separate transparent game logo, or manually crop a flattened original (background is **not** removed automatically).
-- Edit artwork scale, x/y position, contrast, brightness, saturation; adjust blue-gradient start/transition, top shade, logo scaling and shadow.
-- 328×458 vertical composition with hardcoded 49px top / 259px art / 120px game logo / 30px ribbon zones.
-- Hardcoded `#0025A3` blue color at bottom; the game logo is rendered **after** the gradient, constrained within its 120px zone.
-- Alternative 324×189 horizontal export is a proportional scaling of the 328×458 composition, **not a separately art-directed crop**.
-- Export PNG or WebP directly in browser; visual guidelines excluded from export.
-- Preview/sample image from the source set is bundled in `public/`.
+## Limitations
 
-## Practical limitations
-
-This app is a layout/compositing editor **not** an AI background-removal or generative retouching tool. A flattened image with its existing baked-in logo cannot magically have that logo removed. For clean professional assets use the provider PSD or a clean background/main character and a separate transparent game logo. Photoshop PSD layers with advanced effects, complex masks and unsupported color formats may not match Photoshop exactly. No server is involved and uploaded files stay in your browser. For responsive outputs, the horizontal preset uses a scaled version of the vertical layout.
-
-## Stack
-
-React 18 · Vite 6 · lucide-react · ag-psd · Canvas API.
-
-## Vercel deployment (v1.1 JSX fix)
-
-- Import the GitHub repository in Vercel.
-- Set **Root Directory** to `palmsbet-thumbnail-react` if the repository includes this enclosing folder, or `./` if `package.json` is at repo root.
-- Framework: **Vite**; Build command: `npm run build`; Output directory: `dist`.
-- Redeploy after replacing old repository files. Vercel deploys from your GitHub commit; uploading a new ZIP to ChatGPT alone does not update GitHub.
-
-The previous version had a JSX syntax error. v1.1 refactors the interface into smaller components. Runtime build could not be confirmed in this environment because npm package installation was unavailable; Vercel build logs will validate on deployment.
+- Flat images do not provide genuine editable PSD layers. Generated isolated layers may be imperfect.
+- Nano Banana can change lettering or faces and may return opaque images. Always verify original logo, alpha and output with a designer before publishing.
+- For pixel-exact branding, use the official transparent logo from the supplier PSD.
+- Serverless function accepts up to ~6 MB image input and can time out on intensive generations; costs and model access depend on your Google account and Vercel plan.
+- AI outputs should be reviewed, not silently published.
