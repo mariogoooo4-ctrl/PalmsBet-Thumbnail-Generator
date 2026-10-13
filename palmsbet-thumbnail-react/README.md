@@ -38,3 +38,12 @@ This app is a layout/compositing editor **not** an AI background-removal or gene
 ## Stack
 
 React 18 · Vite 6 · lucide-react · ag-psd · Canvas API.
+
+## Vercel deployment (v1.1 JSX fix)
+
+- Import the GitHub repository in Vercel.
+- Set **Root Directory** to `palmsbet-thumbnail-react` if the repository includes this enclosing folder, or `./` if `package.json` is at repo root.
+- Framework: **Vite**; Build command: `npm run build`; Output directory: `dist`.
+- Redeploy after replacing old repository files. Vercel deploys from your GitHub commit; uploading a new ZIP to ChatGPT alone does not update GitHub.
+
+The previous version had a JSX syntax error. v1.1 refactors the interface into smaller components. Runtime build could not be confirmed in this environment because npm package installation was unavailable; Vercel build logs will validate on deployment.
